@@ -27,6 +27,7 @@ import (
 	"math/cmplx"
 	"net/http"
 	"time"
+	"sync"
 )
 
 func main() {
@@ -126,7 +127,8 @@ func juliaMulti(w http.ResponseWriter, r *http.Request) {
 	)
 	start := time.Now()
 	anim := gif.GIF{LoopCount: nframes}     // The animated GIF we are building
-	frames := make(map[int]*image.Paletted) // Frames to be added - key is frame number
+	var frames sync.Map                     // Frames to be added - keys are frame numbers, values are *image.Paletted
+	//frames := make(sync.Map[int]*image.Paletted) // Frames to be added - key is frame number
 	jobs := make(chan int, nframes)         // Frame numbers passed to workers
 	done := make(chan struct{})             // Channel for workers to signal completion
 
@@ -134,7 +136,7 @@ func juliaMulti(w http.ResponseWriter, r *http.Request) {
 		jobs <- k
 	}
 	for i := 0; i < nworkers; i++ { // Start the worker goroutines
-		go frameWorker(jobs, frames, done)
+		go frameWorker(jobs, &frames, done)
 	}
 	close(jobs) // Close the channel
 
@@ -143,9 +145,13 @@ func juliaMulti(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for i := 0; i < nframes; i++ { // add frames *in order*
-		frame := frames[i]
-		anim.Delay = append(anim.Delay, delay)
-		anim.Image = append(anim.Image, frame)
+		frame, ok := frames.Load(i)
+		if ok {
+			anim.Delay = append(anim.Delay, delay)
+			anim.Image = append(anim.Image, frame.(*image.Paletted))
+		} else {
+			log.Fatal("Failed to load frame")
+		}
 	}
 	elapsed := time.Since(start)
 	log.Printf("Took %s", elapsed)
@@ -155,7 +161,7 @@ func juliaMulti(w http.ResponseWriter, r *http.Request) {
 // frameworker is a worker goroutine to generate a frame.
 // Takes a frame number i from the input channel and creates map[i], then signals
 // completion on the (unbuffered) done channel.
-func frameWorker(jobs <-chan int, frames map[int]*image.Paletted, done chan struct{}) {
+func frameWorker(jobs <-chan int, frames *sync.Map, done chan struct{}) {
 	const (
 		xmin, ymin, xmax, ymax = -2, -2, +2, +2
 		width, height          = 1024, 1024
@@ -192,7 +198,7 @@ func frameWorker(jobs <-chan int, frames map[int]*image.Paletted, done chan stru
 			pimg.Palette = opts.Quantizer.Quantize(make(color.Palette, 0, opts.NumColors), img)
 		}
 		opts.Drawer.Draw(pimg, b, img, image.ZP)
-		frames[i] = pimg
+		frames.Store(i,pimg)
 		log.Println("Finished Frame number ", i)
 	}
 	done <- struct{}{} // Signal all frames completed

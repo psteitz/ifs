@@ -31,9 +31,11 @@ import (
 )
 
 func main() {
-	http.HandleFunc("/newton", newton)
-	http.HandleFunc("/julia", julia)
-	http.HandleFunc("/juliaMulti", juliaMulti)
+	http.HandleFunc("/newton", newton)             // Single png 4th roots of unity
+	http.HandleFunc("/julia", julia)               // Single-threaded 64-frame animated GIF of Julia sets
+	http.HandleFunc("/juliaMulti", juliaMulti)     // Multi-threaded julia no sync on the frame map
+	http.HandleFunc("/juliaMultiS", juliaMultiS)   // Multi-threaded julia using sync.Map
+	http.HandleFunc("/juliaMultiSm", juliaMultiSm) // Multi-threaded julia using sync.Map
 	log.Fatal(http.ListenAndServe("localhost:8000", nil))
 }
 
@@ -127,6 +129,90 @@ func juliaMulti(w http.ResponseWriter, r *http.Request) {
 	)
 	start := time.Now()
 	anim := gif.GIF{LoopCount: nframes}     // The animated GIF we are building
+	frames := make(map[int]*image.Paletted) // Frames to be added - key is frame number
+	jobs := make(chan int, nframes)         // Frame numbers passed to workers
+	done := make(chan struct{})             // Channel for workers to signal completion
+
+	for k := 0; k < nframes; k++ { // Push frame generation jobs into the channel
+		jobs <- k
+	}
+	for i := 0; i < nworkers; i++ { // Start the worker goroutines
+		go frameWorker(jobs, frames, done)
+	}
+	close(jobs) // Close the channel
+
+	for i := 0; i < nworkers; i++ { // Wait for workers to finish
+		<-done
+	}
+
+	for i := 0; i < nframes; i++ { // add frames *in order*
+		frame := frames[i]
+		anim.Delay = append(anim.Delay, delay)
+		anim.Image = append(anim.Image, frame)
+	}
+	elapsed := time.Since(start)
+	log.Printf("Took %s", elapsed)
+	gif.EncodeAll(w, &anim)
+}
+
+// frameworker is a worker goroutine to generate a frame.
+// Takes a frame number i from the input channel and creates map[i], then signals
+// completion on the (unbuffered) done channel.
+func frameWorker(jobs <-chan int, frames map[int]*image.Paletted, done chan struct{}) {
+	const (
+		xmin, ymin, xmax, ymax = -2, -2, +2, +2
+		width, height          = 1024, 1024
+		nframes                = 64
+		delay                  = 8
+		delta                  = math.Pi / float64(nframes)
+	)
+
+	for i := range jobs {
+		alpha := float64(i) * delta
+		img := image.NewRGBA64(image.Rect(0, 0, width, height))
+		for py := 0; py < height; py++ {
+			y := float64(py)/height*(ymax-ymin) + ymin
+			for px := 0; px < width; px++ {
+				x := float64(px)/width*(xmax-xmin) + xmin
+				z := complex(x, y)
+				j := juliaIFS(z, alpha)
+				c := color.RGBA64{0, 0, 0, 0}
+				if j > 0 {
+					c = color.RGBA64{0, 0, 60000 - uint16(2000*j), 60000}
+				}
+				img.Set(px, py, c)
+			}
+		}
+
+		// Convert img to a paletted image
+		opts := gif.Options{
+			NumColors: 256,
+			Drawer:    draw.FloydSteinberg,
+		}
+		b := img.Bounds()
+		pimg := image.NewPaletted(b, palette.Plan9[:opts.NumColors])
+		if opts.Quantizer != nil {
+			pimg.Palette = opts.Quantizer.Quantize(make(color.Palette, 0, opts.NumColors), img)
+		}
+		opts.Drawer.Draw(pimg, b, img, image.ZP)
+		frames[i] = pimg
+		log.Println("Finished Frame number ", i)
+	}
+	done <- struct{}{} // Signal all frames completed
+}
+
+// juliaMultiS is functionally equivalent to juliaMulti above, but the map holding the frames is a sync.Map
+func juliaMultiS(w http.ResponseWriter, r *http.Request) {
+	const (
+		xmin, ymin, xmax, ymax = -2, -2, +2, +2
+		width, height          = 1024, 1024
+		nframes                = 64
+		delay                  = 8
+		delta                  = math.Pi / float64(nframes)
+		nworkers               = 4
+	)
+	start := time.Now()
+	anim := gif.GIF{LoopCount: nframes}     // The animated GIF we are building
 	var frames sync.Map                     // Frames to be added - keys are frame numbers, values are *image.Paletted
 	//frames := make(sync.Map[int]*image.Paletted) // Frames to be added - key is frame number
 	jobs := make(chan int, nframes)         // Frame numbers passed to workers
@@ -136,7 +222,7 @@ func juliaMulti(w http.ResponseWriter, r *http.Request) {
 		jobs <- k
 	}
 	for i := 0; i < nworkers; i++ { // Start the worker goroutines
-		go frameWorker(jobs, &frames, done)
+		go frameWorkerS(jobs, &frames, done)
 	}
 	close(jobs) // Close the channel
 
@@ -158,10 +244,8 @@ func juliaMulti(w http.ResponseWriter, r *http.Request) {
 	gif.EncodeAll(w, &anim)
 }
 
-// frameworker is a worker goroutine to generate a frame.
-// Takes a frame number i from the input channel and creates map[i], then signals
-// completion on the (unbuffered) done channel.
-func frameWorker(jobs <-chan int, frames *sync.Map, done chan struct{}) {
+// frameworkerS is equivalent to frameworker, but using a sync.Map
+func frameWorkerS(jobs <-chan int, frames *sync.Map, done chan struct{}) {
 	const (
 		xmin, ymin, xmax, ymax = -2, -2, +2, +2
 		width, height          = 1024, 1024
@@ -203,6 +287,130 @@ func frameWorker(jobs <-chan int, frames *sync.Map, done chan struct{}) {
 	}
 	done <- struct{}{} // Signal all frames completed
 }
+
+// frameMap is a threadsafe map of image frames.
+// Keys are frame numbers, values are pointers to paletted images.
+type frameMap struct {
+	sync.RWMutex
+	internal map[int]*image.Paletted
+}
+
+// newFrameMap creates a new frameMap
+func newFrameMap() *frameMap {
+	return &frameMap{
+		internal: make(map[int]*image.Paletted),
+	}
+}
+
+// get retrieves the value associated with key (and status flag)
+func (fm *frameMap) get(key int) (value *image.Paletted, ok bool) {
+	fm.RLock()
+	result, ok := fm.internal[key]
+	fm.RUnlock()
+	return result, ok
+}
+
+// remove deletes the entry under key
+func (fm *frameMap) remove(key int) {
+	fm.Lock()
+	delete(fm.internal, key)
+	fm.Unlock()
+}
+
+// put adds value under int
+func (fm *frameMap) put(key int, value *image.Paletted) {
+	fm.Lock()
+	fm.internal[key] = value
+	fm.Unlock()
+}
+
+// juliaMultiSm is functionally equivalent to juliaMulti above, but the map holding the frames is a frameMap
+func juliaMultiSm(w http.ResponseWriter, r *http.Request) {
+	const (
+		xmin, ymin, xmax, ymax = -2, -2, +2, +2
+		width, height          = 1024, 1024
+		nframes                = 64
+		delay                  = 8
+		delta                  = math.Pi / float64(nframes)
+		nworkers               = 4
+	)
+	start := time.Now()
+	anim := gif.GIF{LoopCount: nframes}     // The animated GIF we are building
+	var frames sync.Map                     // Frames to be added - keys are frame numbers, values are *image.Paletted
+	//frames := make(sync.Map[int]*image.Paletted) // Frames to be added - key is frame number
+	jobs := make(chan int, nframes)         // Frame numbers passed to workers
+	done := make(chan struct{})             // Channel for workers to signal completion
+
+	for k := 0; k < nframes; k++ { // Push frame generation jobs into the channel
+		jobs <- k
+	}
+	for i := 0; i < nworkers; i++ { // Start the worker goroutines
+		go frameWorkerS(jobs, &frames, done)
+	}
+	close(jobs) // Close the channel
+
+	for i := 0; i < nworkers; i++ { // Wait for workers to finish
+		<-done
+	}
+
+	for i := 0; i < nframes; i++ { // add frames *in order*
+		frame, ok := frames.Load(i)
+		if ok {
+			anim.Delay = append(anim.Delay, delay)
+			anim.Image = append(anim.Image, frame.(*image.Paletted))
+		} else {
+			log.Fatal("Failed to load frame")
+		}
+	}
+	elapsed := time.Since(start)
+	log.Printf("Took %s", elapsed)
+	gif.EncodeAll(w, &anim)
+}
+
+// frameworkerSm is equivalent to frameworker, but using a frameMap
+func frameWorkerSm(jobs <-chan int, frames *frameMap, done chan struct{}) {
+	const (
+		xmin, ymin, xmax, ymax = -2, -2, +2, +2
+		width, height          = 1024, 1024
+		nframes                = 64
+		delay                  = 8
+		delta                  = math.Pi / float64(nframes)
+	)
+
+	for i := range jobs {
+		alpha := float64(i) * delta
+		img := image.NewRGBA64(image.Rect(0, 0, width, height))
+		for py := 0; py < height; py++ {
+			y := float64(py)/height*(ymax-ymin) + ymin
+			for px := 0; px < width; px++ {
+				x := float64(px)/width*(xmax-xmin) + xmin
+				z := complex(x, y)
+				j := juliaIFS(z, alpha)
+				c := color.RGBA64{0, 0, 0, 0}
+				if j > 0 {
+					c = color.RGBA64{0, 0, 60000 - uint16(2000*j), 60000}
+				}
+				img.Set(px, py, c)
+			}
+		}
+
+		// Convert img to a paletted image
+		opts := gif.Options{
+			NumColors: 256,
+			Drawer:    draw.FloydSteinberg,
+		}
+		b := img.Bounds()
+		pimg := image.NewPaletted(b, palette.Plan9[:opts.NumColors])
+		if opts.Quantizer != nil {
+			pimg.Palette = opts.Quantizer.Quantize(make(color.Palette, 0, opts.NumColors), img)
+		}
+		opts.Drawer.Draw(pimg, b, img, image.ZP)
+		frames.put(i,pimg)
+		log.Println("Finished Frame number ", i)
+	}
+	done <- struct{}{} // Signal all frames completed
+}
+
 
 // mewtomIFS iterates Newton's method to find a root of p(x) = x^4 - 1 starting with initial guess = z.
 // Returns a color coded as follows:

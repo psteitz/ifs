@@ -2,7 +2,7 @@
 // illustrating the eventual behavior of some classic iterated function systems.
 //
 // The newton function generates a png showing Newton's method IFS seeking roots
-// of p(z) = z^4 - 1.  The julia function generates Julia sets  showing eventual
+// of p(z) = z^4 - 1.  The julia function generates Julia sets showing eventual
 // behavior under the process z -> z^2 + c for a range of c values creating an
 // animated GIF with each frame corresponding to a different c value.
 //
@@ -269,26 +269,8 @@ func newtonIFS(z complex128, contrast int) color.RGBA64 {
 	return color.RGBA64{0, 0, 0, 0}
 }
 
-// juliaIFS iterates the process z -> z^2 + .7885 e^i*alpha starting at z until either 400 iterations have
-// completed or the modulus of an iterate exceeds 10.  Returns 0 in the first case (no escape);
-// otherwise the number of iterations required to escape.
-func juliaIFSc(z complex128, alpha float64) int {
-	const (
-		iterations = 400
-		big        = 10.0
-	)
-	c := .7885 * cmplx.Exp(complex(0, alpha))
-	for i := 0; i < iterations; i++ {
-		z = z*z + c
-		if cmplx.Abs(z) > big {
-			return i
-		}
-	}
-	return 0
-}
-
 // juliaIFS iterates the process z -> z^2 + c starting at z until either maxIter iterations have
-// completed or the modulus of an iterate exceeds 10.  Returns 0 in the first case (no escape);
+// completed or the modulus of an iterate exceeds big.  Returns 0 in the first case (no escape);
 // otherwise the number of iterations required to escape.
 func juliaIFS(z complex128, c complex128, maxIter int, big float64) int {
 	for i := 0; i < maxIter; i++ {

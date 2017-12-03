@@ -114,7 +114,7 @@ type frame struct {
 //           This parameterization is borrowed from one of the examples in
 //           https://en.wikipedia.org/wiki/Julia_set
 //  Angor:   The c values range from -1.45 to 1.25 along the real axis
-//  Wabbit:  The c values linearly about  .3887 - .2158i with both parameters
+//  Wabbit:  The c values vary linearly about  .3887 - .2158i with both parameters
 //           moving from .03 below to .03 above these values.
 //
 // Frames are generated concurrently by goroutines.
@@ -129,8 +129,12 @@ func julia(w http.ResponseWriter, r *http.Request) {
 		delay                  = 8
 	)
 
-	// Create a map of parameter functions, keyed by name
+	// A paramFunc is a function that takes a frame number and number of frames as arguments
+	// and returns a c value.  For example, watFunc varies the c parameter along the real axis
+	// over a range from -1.45 to -1.25 (and back again) in increments determined by the number of frames.
 	type paramFunc func(int, int) complex128
+
+	// Create a map of parameter functions, keyed by name
 	paramFuncs := map[string]paramFunc{
 		"Angor":  watFunc,
 		"Exp":    expFunc,
@@ -192,6 +196,8 @@ func julia(w http.ResponseWriter, r *http.Request) {
 	gif.EncodeAll(w, &anim)
 }
 
+// watFunc varies c along the real axis, starting at -1.45, increasing to -1.25 (edge of the Mandelbrot set)
+// and then returning to -1.45
 func watFunc(i int, nFrames int) complex128 {
 	const (
 		paramWidth             = 0.2
@@ -208,6 +214,8 @@ func watFunc(i int, nFrames int) complex128 {
 	return complex(paramStart + alpha, 0)
 }
 
+// linFunc varies c about .3887 - .2158i, a point on the edge of the Mandelbrot set.
+// The variation adds constant increments to both coordinates and then reduces along the same (linear) path.
 func linFunc(i int, nFrames int) complex128 {
 	const (
 		center = complex(.3887, -.2158)
@@ -224,6 +232,7 @@ func linFunc(i int, nFrames int) complex128 {
 	return complex(real(center) + alpha, imag(center) + alpha)
 }
 
+// expFunc moves c around the circle, .7885e^i*alpha where alfpha goes from 0 to 2pi.
 func expFunc(i int, nFrames int) complex128 {
 	return .7885 * cmplx.Exp(complex(0, float64(i) * 2 * math.Pi / float64(nFrames)))
 }

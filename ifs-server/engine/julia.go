@@ -1,19 +1,20 @@
-
 package engine
 
 import (
-	"time"
-	"log"
-	"image/gif"
 	"image"
-	"math/cmplx"
-	"math"
-	"image/draw"
 	"image/color"
 	"image/color/palette"
+	"image/draw"
+	"image/gif"
+	"image/png"
+	"io"
+	"log"
+	"math"
+	"math/cmplx"
+	"time"
 )
 
-func Julia (nFrames int, nWorkers int, paramPath string) {
+func Julia(nFrames int, nWorkers int, paramPath string, writer io.Writer) {
 	const (
 		xmin, ymin, xmax, ymax = -2, -2, +2, +2
 		width, height          = 1024, 1024
@@ -36,10 +37,10 @@ func Julia (nFrames int, nWorkers int, paramPath string) {
 
 	log.Printf(" Starting job with nframes = %d nworkers = %d parampath = %s \n", nFrames, nWorkers, paramPath)
 
-	anim := gif.GIF{LoopCount: nFrames}          // The animated GIF we are building
-	jobs := make(chan *frameParameter, nFrames)  // <i, c> pairs where c is the parameter for ith frame
-	results := make(chan *frame, nFrames)        // Channel for workers to deliver completed frames
-	frames := make ([] *image.Paletted, nFrames) // Completed frames
+	anim := gif.GIF{LoopCount: nFrames}         // The animated GIF we are building
+	jobs := make(chan *frameParameter, nFrames) // <i, c> pairs where c is the parameter for ith frame
+	results := make(chan *frame, nFrames)       // Channel for workers to deliver completed frames
+	frames := make([]*image.Paletted, nFrames)  // Completed frames
 
 	for k := 0; k < nFrames; k++ { // Push frame generation jobs into the channel
 		cp := paramFuncs[paramPath](k, nFrames)
@@ -67,48 +68,72 @@ func Julia (nFrames int, nWorkers int, paramPath string) {
 	}
 	elapsed := time.Since(start)
 	log.Printf("Took %s", elapsed)
-	gif.EncodeAll(w, &anim)
+	gif.EncodeAll(writer, &anim)
+}
+
+// Creates a PNG image of a single Julia set for the process z->z^2 + c.
+// The c parameter is constructed from the re and im request parameters.
+func JuliaSingle(c complex128, w io.Writer) {
+	const (
+		xmin, ymin, xmax, ymax = -2, -2, +2, +2
+		width, height          = 1024, 1024
+	)
+	img := image.NewRGBA64(image.Rect(0, 0, width, height))
+	for py := 0; py < height; py++ {
+		y := float64(py)/height*(ymax-ymin) + ymin
+		for px := 0; px < width; px++ {
+			x := float64(px)/width*(xmax-xmin) + xmin
+			z := complex(x, y)
+			result := juliaIFS(z, c, 400, 10.0)
+			co := color.RGBA64{0, 0, 0, 60000}
+			if result > 0 {
+				co = color.RGBA64{0, uint16(2000 * result), 60000 - uint16(2000*result), 60000}
+			}
+			img.Set(px, py, co)
+		}
+	}
+	png.Encode(w, img)
 }
 
 // watFunc varies c along the real axis, starting at -1.45, increasing to -1.25 (edge of the Mandelbrot set)
 // and then returning to -1.45
 func watFunc(i int, nFrames int) complex128 {
 	const (
-		paramWidth             = 0.2
-		paramStart             = -1.45
+		paramWidth = 0.2
+		paramStart = -1.45
 	)
-	halframes := nFrames/2
+	halframes := nFrames / 2
 	delta := paramWidth / float64(halframes)
-	var alpha float64;
-	if (i < halframes) {
+	var alpha float64
+	if i < halframes {
 		alpha = float64(i) * delta
 	} else {
-		alpha = paramWidth - float64(i - halframes) * delta
+		alpha = paramWidth - float64(i-halframes)*delta
 	}
-	return complex(paramStart + alpha, 0)
+	return complex(paramStart+alpha, 0)
 }
 
 // linFunc varies c about .3887 - .2158i, a point on the edge of the Mandelbrot set.
 // The variation adds constant increments to both coordinates and then reduces along the same (linear) path.
 func linFunc(i int, nFrames int) complex128 {
 	const (
-		center = complex(.3887, -.2158)
+		center     = complex(.3887, -.2158)
 		paramWidth = 0.06
 	)
-	halframes := nFrames/2
+	halframes := nFrames / 2
 	delta := paramWidth / float64(halframes)
-	var alpha float64;
-	if (i < halframes) {
+	var alpha float64
+	if i < halframes {
 		alpha = float64(i) * delta
 	} else {
-		alpha = paramWidth - float64(i - halframes) * delta
+		alpha = paramWidth - float64(i-halframes)*delta
 	}
-	return complex(real(center) + alpha, imag(center) + alpha)
+	return complex(real(center)+alpha, imag(center)+alpha)
 }
 
 // expFunc moves c around the circle, .7885e^i*alpha where alfpha goes from 0 to 2pi.
 func expFunc(i int, nFrames int) complex128 {
-	return .7885 * cmplx.Exp(complex(0, float64(i) * 2 * math.Pi / float64(nFrames)))
+	return .7885 * cmplx.Exp(complex(0, float64(i)*2*math.Pi/float64(nFrames)))
 }
 
 // frameworker is a worker goroutine to generate a frame.
@@ -133,10 +158,10 @@ func frameWorker(jobs <-chan *frameParameter, results chan<- *frame) {
 			for px := 0; px < width; px++ {
 				x := float64(px)/width*(xmax-xmin) + xmin
 				z := complex(x, y)
-				j:= juliaIFS(z, fp.c, 400, 10.0)
+				j := juliaIFS(z, fp.c, 400, 10.0)
 				c := color.RGBA64{0, 0, 0, 0}
 				if j > 0 {
-					c = color.RGBA64{0, uint16(2000*j), 60000 - uint16(2000*j), 60000}
+					c = color.RGBA64{0, uint16(2000 * j), 60000 - uint16(2000*j), 60000}
 				}
 				img.Set(px, py, c)
 			}
@@ -157,13 +182,13 @@ func frameWorker(jobs <-chan *frameParameter, results chan<- *frame) {
 // frameParameter is an indexed c parameter for the process z -> z^2 + c
 type frameParameter struct {
 	index int
-	c complex128
+	c     complex128
 }
 
 // frame is an indexed image
 type frame struct {
 	index int
-	img *image.Paletted
+	img   *image.Paletted
 }
 
 // juliaIFS iterates the process z -> z^2 + c starting at z until either maxIter iterations have

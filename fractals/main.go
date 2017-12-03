@@ -29,8 +29,9 @@ import (
 )
 
 func main() {
-	http.HandleFunc("/newton", newton)    // Single png 4th roots of unity
-	http.HandleFunc("/julia", julia)      // Animated GIF of Julia set images
+	http.HandleFunc("/newton", newton)    			// Single png 4th roots of unity
+	http.HandleFunc("/julia", julia)      			// Animated GIF of Julia set images
+	http.HandleFunc("/juliaSingle", juliaSingle)   	// Single png of a Julia set
 	log.Fatal(http.ListenAndServe("localhost:8000", nil))
 }
 
@@ -50,6 +51,43 @@ func newton(w http.ResponseWriter, r *http.Request) {
 			x := float64(px)/width*(xmax-xmin) + xmin
 			z := complex(x, y)
 			img.Set(px, py, newtonIFS(z, 2000))
+		}
+	}
+	png.Encode(w, img)
+}
+
+// Creates a PNG image of a single Julia set for the process z->z^2 + c.
+// The c parameter is constructed from the re and im request parameters.
+func juliaSingle(w http.ResponseWriter, r *http.Request) {
+	const (
+		xmin, ymin, xmax, ymax = -2, -2, +2, +2
+		width, height          = 1024, 1024
+	)
+
+	// Get c from request querystring
+	re, err := strconv.ParseFloat(r.URL.Query().Get("re"), 64)
+	if err != nil {
+		re = -1.25
+		log.Println("re missing or invalid - settting to -1.25")
+	}
+	im, err := strconv.ParseFloat(r.URL.Query().Get("im"), 64)
+	if err != nil {
+		im = 0
+		log.Println("im missing or invalid - settting to 0")
+	}
+	c := complex(re, im)
+	img := image.NewRGBA64(image.Rect(0, 0, width, height))
+	for py := 0; py < height; py++ {
+		y := float64(py)/height*(ymax-ymin) + ymin
+		for px := 0; px < width; px++ {
+			x := float64(px)/width*(xmax-xmin) + xmin
+			z := complex(x, y)
+			result := juliaIFS(z, c, 400, 10.0)
+			co := color.RGBA64{0, 0, 0, 60000}
+			if result > 0 {
+				co = color.RGBA64{0, uint16(2000*result), 60000 - uint16(2000*result), 60000}
+			}
+			img.Set(px, py, co)
 		}
 	}
 	png.Encode(w, img)

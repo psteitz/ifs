@@ -7,8 +7,9 @@ Some of the core image-generation code is adapted from the [mandelbrot](https://
 0. Install go if you do not already have it installed (see https://go.dev/doc/install).
 1. Clone this repo ``git clone https://github.com/psteitz/ifs.git``
 2. From the base directory of the cloned repo, ``go run main.go``
-This will start an http server.  To stop it, use CTRL-C.
 3. Open a browser and hit ``http://localhost:8080/julia`` to see an example animated fractal image.
+
+Step 2. starts an http server. When you are finished playing with it, use ctrl-C to kill it.
 
 # What it does
 The generated images are related to [Julia sets](https://en.wikipedia.org/wiki/Julia_set).  The brightest points in the images are close to points in the Julia set associated with the process. The request path ``http://localhost:8080/juliaSingle`` expects two request parameters, ``re`` and ``im``. The generated image shows the eventual behavior of the iterative function system ``z -> z^2 + c`` where ``z`` is a complex number corresponding to a point in the window of the image and ``c`` is the complex number with real part equal to ``re`` and imaginary part equal to ``im``.  

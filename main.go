@@ -17,7 +17,8 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"github.com/psteitz/ifs/ifs-server/engine"
+
+	"github.com/psteitz/ifs/engine"
 )
 
 func main() {
@@ -85,9 +86,9 @@ func julia(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get parameters from request querystring
-	paramPath := r.URL.Query().Get("parampath")
+	paramPath := r.URL.Query().Get("paramPath")
 	if !paramPaths[paramPath] {
-		paramPath = "Angor"
+		paramPath = "Exp"
 		log.Println("parampath missing or invalid - settting to default")
 	}
 	nFrames, err := strconv.Atoi(r.URL.Query().Get("numframes"))

@@ -31,3 +31,25 @@ The request path ``http://localhost:8080/newton`` generates a single image showi
 
 Points that don't converge to any root are colored black and brightness of the colored points is determined by how long the iterates take to converge to the respective root.
  
+# Request parameters
+
+```/juliaSingle``` has two request parameters:
+| Parameter       | Meaning      | Default value |   
+|-------------|-------------|-------------|
+| re | Real part of c parameter | -1.25  |
+| im | Imaginary part of c parameter | 0  |
+***
+
+
+```/julia``` recognizes 3 parameters:
+| Parameter       | Meaning      | Default value |  
+|-------------|-------------|-------------|
+| paramPath | name of paramter path function | Exp  |
+| numframes | Number of frames to compute along paramPath | 64  |
+| numworkers | Number of goroutines to concurrently build frames | 4 |
+***
+
+```/newton``` recognizes ```numframes``` and ```numworkers``` as above.
+
+Increasing the number of frames will make the animation go more slowly and smoothly, but will take longer to compute.  Increasing the number of workers can speed things up if the run host has a lot of available compute.
+

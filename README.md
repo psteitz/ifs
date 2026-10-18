@@ -7,7 +7,7 @@ Some of the core image-generation code is adapted from the [mandelbrot](https://
 0. Install go if you do not already have it installed (see https://go.dev/doc/install).
 1. Clone this repo ``git clone https://github.com/psteitz/ifs.git``
 2. From the base directory of the cloned repo, ``go run main.go``
-3. Open a browser and hit ``http://localhost:8080/julia`` to see an example animated fractal image.
+3. Open a browser and hit ``http://localhost:8000/julia`` to see an example animated fractal image.
 
 Step 2. starts an http server. When you are finished playing with it, use ctrl-C to kill it.
 

@@ -14,13 +14,11 @@ Step 2. starts an http server. When you are finished playing with it, use ctrl-C
 # What it does
 The generated images are related to [Julia sets](https://en.wikipedia.org/wiki/Julia_set).  The brightest points in the images are close to points in the Julia set associated with the process. 
 
-## Julia sets for the Mandelbrot map, $
-z \to z^2 + c
-$
+## Julia sets for the Mandelbrot map, $z \to z^2 + c$
 
 The request path ``http://localhost:8080/juliaSingle`` expects two request parameters, ``re`` and ``im``. The generated image shows the eventual behavior of the iterative function system $z \to z^2 + c$ where $z$ is a complex number corresponding to a point in the window of the image and $c$ is the complex number with real part equal to ``re`` and imaginary part equal to ``im``.  
 
-The window is the square from -1.5 to 1.5 in both real and imaginary dimensions in the complex plane.  If a point is colored black, that means that when ``z`` is set initially to that point and $z \to z^2 + c$  is iterated repeatedly, the value remains small in modulus (i.e., the point does not "escape to infinity"). Points that do escape to infinity are colored according to how many iterations it takes for their modulus to exceed 10.  The very bright points are likely close the the Julia set for the process.  For example, ``http://localhost:8000/juliaSingle?re=-0.8&im=0.156`` generates an image whose brightest points correspond to points in the Julia set for $z -> z^2 + (-0.8 + 0.156i)$
+The window is the square from -1.5 to 1.5 in both real and imaginary dimensions in the complex plane.  If a point is colored black, that means that when ``z`` is set initially to that point and $z \to z^2 + c$  is iterated repeatedly, the value remains small in modulus (i.e., the point does not "escape to infinity"). Points that do escape to infinity are colored according to how many iterations it takes for their modulus to exceed 10.  The very bright points are likely close the the Julia set for the process.  For example, ``http://localhost:8000/juliaSingle?re=-0.8&im=0.156`` generates an image whose brightest points correspond to points in the Julia set for $z \to z^2 + (-0.8 + 0.156i)$
 
 The request path ``http://localhost:8080/julia`` generates animated gifs that do what ``http://localhost:8080/juliaSingle`` does, but for a range of ``c`` values that move in and out of the [Mandelbrot Set](https://en.wikipedia.org/wiki/Julia_set).  The path that ``c`` traverses is determined by the ``paramPath`` request parameter. 
 1. ``Angor`` moves $c$ along the real axis, back and forth between -1.25 and 1.25 (near edges of the Mandelbrot set).
@@ -46,12 +44,13 @@ $$ p(z) = (z - z_0)(z - z_1) \dots (z - z_{n-1}) $$
 The standard Newton-Raphson formula is
 $$z_{k+1}=z_{k}-\frac{p(z_{k})}{p^{\prime}(z_{k})}$$
 which for $p$ as defined above is:
-$$\mathbf{z}_{\mathbf{k+1}}\mathbf{=z}_{\mathbf{k}}\mathbf{-}\frac{\mathbf{1}}{\sum _{\mathbf{i=0}}^{\mathbf{n}}\frac{\mathbf{1}}{\mathbf{z}_{\mathbf{k}}\mathbf{-z}_{\mathbf{i}}}}$$
+$$z_{k+1}=z_{k}-\frac{1}{\sum _{i=0}^{n}\frac{1}{z_{k}-z_{i}}}$$
 
 This simple form can be derived using logarithmic differentiation. Start by taking the natural logarithm of both sides of the polynomial's defining formula:
 $$p(z)=\prod _{i=0}^{n}(z-z_{i})$$
 $$\ln (p(z))=\ln \left(\prod _{i=0}^{n}(z-z_{i})\right)=\sum _{i=0}^{n}\ln (z-z_{i})$$
-By the chain rule, $$\frac{d}{dz}[\ln(p(z))] = \frac{p'(z)}{p(z)}$$ 
+By the chain rule,
+$$\frac{d}{dz}[\ln(p(z))] = \frac{p'(z)}{p(z)}$$
 but
 $$\frac{d}{dz}\left[\sum_{i=0}^{n}\ln(z-z_{i})\right] = \sum_{i=0}^{n}\frac{1}{z-z_{i}}$$
 so

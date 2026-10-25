@@ -14,25 +14,104 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
+	"net/url"
+	"regexp"
+	"sort"
 	"strconv"
 
 	"github.com/psteitz/ifs/engine"
 )
 
 func main() {
-	http.HandleFunc("/newton", newton)    			// Single png 4th roots of unity
-	http.HandleFunc("/julia", julia)      			// Animated GIF of Julia set images
-	http.HandleFunc("/juliaSingle", juliaSingle)   	// Single png of a Julia set
+	http.HandleFunc("/newton", newton)           // Single png 4th roots of unity
+	http.HandleFunc("/julia", julia)             // Animated GIF of Julia set images
+	http.HandleFunc("/juliaSingle", juliaSingle) // Single png of a Julia set
 	log.Fatal(http.ListenAndServe("localhost:8000", nil))
 }
 
-// Creates a PNG image showing eventual behavior of Newton's method IFS
-// seeking 4th roots of unity.  Points in the complex plane are colored according
-// to eventual behavior when they are taken as initial guesses.
+// rootParamRegexp matches querystring keys of the form roots[<index>][real] or
+// roots[<index>][imag], used to specify an arbitrary list of polynomial roots for /newton.
+var rootParamRegexp = regexp.MustCompile(`^roots\[(\d+)\]\[(real|imag)\]$`)
+
+// Creates a PNG image showing eventual behavior of Newton's method IFS seeking roots of a
+// polynomial.  Points in the complex plane are colored according to eventual behavior when
+// they are taken as initial guesses.
+//
+// By default (no roots querystring parameters), the roots are the 4th roots of unity.
+// Callers may instead supply an arbitrary list of complex roots z_0, ..., z_n-1 using
+// querystring parameters of the form roots[i][real] and roots[i][imag], e.g.
+//
+//	/newton?roots[0][real]=1&roots[0][imag]=1&roots[1][real]=-1.5&roots[1][imag]=0.5&roots[2][real]=0&roots[2][imag]=-1.5
 func newton(w http.ResponseWriter, r *http.Request) {
-	engine.Newton(w)
+	roots, err := parseRoots(r.URL.Query())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if len(roots) == 0 {
+		engine.Newton(w)
+		return
+	}
+	engine.NewtonExt(roots, w)
+}
+
+// parseRoots extracts an ordered list of complex roots from querystring parameters of the
+// form roots[i][real] and roots[i][imag] (i starting at 0).  Returns a nil slice (and nil
+// error) if no such parameters are present.  Returns an error if an index is missing its
+// real or imaginary part, or if a value cannot be parsed as a float.
+func parseRoots(values url.Values) ([]complex128, error) {
+	type rootParts struct {
+		real, imag       float64
+		hasReal, hasImag bool
+	}
+	partsByIndex := map[int]*rootParts{}
+	for key, vals := range values {
+		m := rootParamRegexp.FindStringSubmatch(key)
+		if m == nil {
+			continue
+		}
+		idx, err := strconv.Atoi(m[1])
+		if err != nil {
+			continue // regexp guarantees digits, so this should not happen
+		}
+		v, err := strconv.ParseFloat(vals[0], 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid value for %s: %v", key, err)
+		}
+		p, ok := partsByIndex[idx]
+		if !ok {
+			p = &rootParts{}
+			partsByIndex[idx] = p
+		}
+		if m[2] == "real" {
+			p.real, p.hasReal = v, true
+		} else {
+			p.imag, p.hasImag = v, true
+		}
+	}
+
+	if len(partsByIndex) == 0 {
+		return nil, nil
+	}
+
+	indices := make([]int, 0, len(partsByIndex))
+	for idx := range partsByIndex {
+		indices = append(indices, idx)
+	}
+	sort.Ints(indices)
+
+	roots := make([]complex128, 0, len(indices))
+	for _, idx := range indices {
+		p := partsByIndex[idx]
+		if !p.hasReal || !p.hasImag {
+			return nil, fmt.Errorf("root at index %d is missing its real or imaginary part", idx)
+		}
+		roots = append(roots, complex(p.real, p.imag))
+	}
+	return roots, nil
 }
 
 // Creates a PNG image of a single Julia set for the process z->z^2 + c.
@@ -57,24 +136,26 @@ func juliaSingle(w http.ResponseWriter, r *http.Request) {
 	engine.JuliaSingle(complex(re, im), w)
 }
 
-
 // julia creates an animated GIF with frames displaying Julia sets for the process
-//   z -> z^2 + c
+//
+//	z -> z^2 + c
+//
 // Each frame shows the Julia set for a different c value.  The progression of c values
 // is determined by the parampath request paramter.  The recognized parampath values are:
-//  Exp:     The c values are of the form .7885 e^ia where a ranges from 0 to 2pi.
-//           As a goes from 0 to 2pi, c goes in and out of the Mandelbrot set.
-//           This parameterization is borrowed from one of the examples in
-//           https://en.wikipedia.org/wiki/Julia_set
-//  Angor:   The c values range from -1.45 to 1.25 along the real axis
-//  Wabbit:  The c values vary linearly about  .3887 - .2158i with both parameters
-//           moving from .03 below to .03 above these values.
+//
+//	Exp:     The c values are of the form .7885 e^ia where a ranges from 0 to 2pi.
+//	         As a goes from 0 to 2pi, c goes in and out of the Mandelbrot set.
+//	         This parameterization is borrowed from one of the examples in
+//	         https://en.wikipedia.org/wiki/Julia_set
+//	Angor:   The c values range from -1.45 to 1.25 along the real axis
+//	Wabbit:  The c values vary linearly about  .3887 - .2158i with both parameters
+//	         moving from .03 below to .03 above these values.
 //
 // Frames are generated concurrently by goroutines.
 // The other request parameters are
-//  numworkers:  the number of goroutines to exexute
-//  numframes:   the number of frames in the animation
 //
+//	numworkers:  the number of goroutines to exexute
+//	numframes:   the number of frames in the animation
 func julia(w http.ResponseWriter, r *http.Request) {
 
 	// "Set" of the valid parameter paths

@@ -14,7 +14,9 @@ Step 2. starts an http server. When you are finished playing with it, use ctrl-C
 # What it does
 The generated images are related to [Julia sets](https://en.wikipedia.org/wiki/Julia_set).  The brightest points in the images are close to points in the Julia set associated with the process. 
 
-## Julia sets for the Mandelbrot map, $z \to z^2 + c$
+## Julia sets for the Mandelbrot map, $
+z \to z^2 + c
+$
 
 The request path ``http://localhost:8080/juliaSingle`` expects two request parameters, ``re`` and ``im``. The generated image shows the eventual behavior of the iterative function system $z \to z^2 + c$ where $z$ is a complex number corresponding to a point in the window of the image and $c$ is the complex number with real part equal to ``re`` and imaginary part equal to ``im``.  
 
